@@ -26,6 +26,58 @@ Your job:
 import numpy as np
 import matplotlib.pyplot as plt
 
+class LogisticRegressionL1:
+    def __init__(self, lr=0.01, lmbda=0.1, epochs=1000):
+        self.lr = lr
+        self.lmbda = lmbda
+        self.epochs = epochs
+        self.w = 0.0
+        self.b = 0.0
+
+    def sigmoid(self, z):
+        z = np.clip(z, -500, 500)
+        return 1 / (1 + np.exp(-z)) # sigmoid (0, 1)
+    
+    def fitL2(self, x, y):
+        n = len(x) # num of samples
+
+        # implement our training loop
+        for _ in range(self.epochs):
+            # 1) Linear score
+            z = self.w * x + self.b # normal regression so far...
+
+            # 2) Probability via sigmoid
+            # y_pred = sigmoid(z)
+            y_pred = self.sigmoid(z) # make it binary
+
+            # 3) Gradients with L2 penalty on w
+
+            # gradient of BCE + L2 on slope
+            dw = (1/n) * np.sum((y_pred - y) * x) + (self.lmbda * self.w)
+            db = (1/n) * np.sum(y_pred - y)
+
+
+            # 4) Update parameters
+            self.w -= self.lr * dw
+            self.b -= self.lr * db
+    
+    def fitL1(self, x, y):
+        n = len(x)
+        for _ in range(self.epochs):
+            z = self.w * x + self.b
+            y_pred = self.sigmoid(z)
+
+
+            
+            
+
+
+    def predict(self, X_test):
+        return self.w * X_test + self.b
+
+
+
+
 # -------------------------------------------------------------------
 # PART 0: Reproducibility
 # -------------------------------------------------------------------
@@ -81,54 +133,8 @@ def train_test_split(x, y1, y2, test_size=0.2):
 
 
 # -------------------------------------------------------------------
-# PART 3: Linear Regression with L2 Regularization (Ridge-style)
-# -------------------------------------------------------------------
-def train_linear_regression_l2(x, y, lr=0.01, lmbda=0.1, epochs=1000):
-    """
-    Train linear regression y_hat = m*x + b using gradient descent.
-
-    IMPORTANT: Include L2 penalty on the weight m (NOT on b).
-        Loss = MSE + (lmbda/2) * m^2  (constant factors can vary by convention)
-
-    Implement gradient descent updates for m and b.
-
-    Return:
-        m, b
-    """
-    m, b = 0.0, 0.0 # initialize w/ zero weights
-    n = len(x) # num of samples
-
-    # implement our training loop
-    for _ in range(epochs):
-        # 1) Forward pass: predictions
-        y_pred = m * x + b # model pred
-
-        # 2) Compute gradients:
-        # calculate gradients w/ L2 penalty on m
-        dm = (2/n) * np.sum(-x * (y - y_pred)) + (lmbda * m)
-        db = (2/n) * np.sum(-(y - y_pred))
-
-        # 3) Update parameters
-        m -= lr * dm # minimize loss!
-        b -= lr * db
-
-    return m, b
-
-
-# -------------------------------------------------------------------
 # PART 4: Logistic Regression with L2 Regularization
 # -------------------------------------------------------------------
-def sigmoid(z):
-    """
-    Numerically stable sigmoid.
-
-    - Clip z to prevent overflow in exp.
-    - Return sigmoid(z).
-
-    Tip: np.clip(z, -500, 500) is common for stability.
-    """
-    z = np.clip(z, -500, 500)
-    return 1 / (1 + np.exp(-z)) # sigmoid (0, 1)
 
 
 def train_logistic_regression_l2(x, y, lr=0.1, lmbda=0.1, epochs=2000):
@@ -217,11 +223,6 @@ plt.show()
 print("\nPART A (Write-up prompt):")
 print("In 2–4 sentences, explain why labels y are computed from v_clean instead of v_noisy,")
 print("and what a 'fuzzy boundary' means here.\n")
-# The labels are made from v_clean instead of v_noisy so that the "true answer" isn't affected
-# by random measurement errors. If we used the noisy values, some points might randomly
-# flip classes just because of noies. A fuzzy boundary means the cutoff between classes isn't
-# perfectly clear in the noisy data. Even though the real boundary is clean, the noise
-# makes some points near it harder to classify.
 
 # B) Split
 t_train, t_test, v_train, v_test, y_train, y_test = train_test_split(t, v, y, test_size=0.2)
@@ -251,12 +252,6 @@ print(f"Test MSE: {mse:.4f}")
 print("\nPART C (Write-up prompt):")
 print("In 3–6 sentences: What happens to the learned slope when lmbda increases?")
 print("Why does that make sense when the data is noisy?\n")
-# When lambda increases, the slope gets smaller. That's beacuse the regularizaion is
-# basically discouraging the model from choosing a steep line. Since the data has noise,
-# a steep slope might try to chase small random bumps instead of the overall trend. So
-# increasing lambda helps smooth things out. If lambda gets too big though, the model
-# can become too simple and not fit the data well enough.
-
 
 # D) Logistic regression with L2
 w, b_log = train_logistic_regression_l2(t_train, y_train, lr=0.1, lmbda=0.2, epochs=2000)
@@ -276,11 +271,6 @@ print(f"F1-Score:  {f1:.4f}")
 print("\nPART D (Write-up prompt):")
 print("In 2–3 sentences: Why do we clip z before np.exp in sigmoid?")
 print("What problem does it prevent?\n")
-# We clip z before using np.exp so the numbers don't blow up. If z gets too large or too
-# negative, the exponential function can cause overflow errors. Clipping just keeps
-# everything in a safe range so the model trains normally.
-
-
 # -------------------------------------------------------------------
 # PART E: Metrics Visualization Block (Required)
 # -------------------------------------------------------------------
