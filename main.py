@@ -1,60 +1,74 @@
-import kagglehub
-import os
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 
 # -------------------------------------------------------------------
-# 1) DATA LOADING & PREPROCESSING
+# 1) DATA LOADING AND PREPROCESSING
 # -------------------------------------------------------------------
 
-filename = "reels_attention_span_dataset_12000.csv"
-df = pd.read_csv(filename)
+DATA_FILE = "reels_attention_span_dataset_12000.csv"
 
-# --- FEATURE SELECTION ---
-# We drop 'user_id' because it's just a label, not a real data point.
-df = df.drop('user_id', axis=1)
+# Load the Kaggle dataset.
+df = pd.read_csv(DATA_FILE)
 
-# --- HANDLING CATEGORICAL DATA (The 'platform' column) ---
-# One-Hot Encoding: This creates new columns for 'Instagram Reels' and 'YouTube Shorts' 
-# containing 1s and 0s so the model can understand the platform.
-df = pd.get_dummies(df, columns=['platform'], drop_first=True, dtype=int)
+# Get rid of user_ids because its irrelevant for the model
+df = df.drop("user_id", axis=1)
 
-# --- DEFINING TARGET (y) ---
-# We want to predict Stress Level. 
-# We turn it into 1 if 'High', and 0 if 'Medium' or 'Low'.
-y = (df['stress_level'] == 'High').astype(int).values
+# Create binary classification target.
+# Cutoff is from 6-10
+y = (df["attention_span_score"] >= 6).astype(int).values
 
-# --- DEFINING FEATURES (X) ---
-# Use all columns EXCEPT the target 'stress_level'
-X_raw = df.drop('stress_level', axis=1).values.astype(float)
+# Use all remaining columns except the target as input features.
+X_df = df.drop("attention_span_score", axis=1)
 
-# DATA SCALING: (X - mean) / std
-# This is critical for L1/L2 regularization to work fairly across all features.
-X = (X_raw - np.mean(X_raw, axis=0)) / np.std(X_raw, axis=0)
+# change categorical columns to numerical values
+X_df = pd.get_dummies(
+    X_df,
+    columns=["platform", "stress_level"],
+    drop_first=True,
+    dtype=int
+)
 
+feature_names = X_df.columns.to_numpy()
+X_raw = X_df.values.astype(float)
 
-# TRAIN/TEST SPLIT (80/20)
+# Train/test split BEFORE SCALING BC DATA LEAKAGE = BAD = SAD AI :(
 np.random.seed(42)
-indices = np.random.permutation(len(X))
-split_point = int(len(X) * 0.8)
-train_idx, test_idx = indices[:split_point], indices[split_point:]
+indices = np.random.permutation(len(X_raw))
+split_point = int(len(X_raw) * (1 - .20))
+train_idx = indices[:split_point]
+test_idx = indices[split_point:]
 
-X_train, X_test = X[train_idx], X[test_idx]
-y_train, y_test = y[train_idx], y[test_idx]
+X_train_raw = X_raw[train_idx]
+X_test_raw = X_raw[test_idx]
+y_train = y[train_idx]
+y_test = y[test_idx]
+
+# Standardize using only the training set statistics.
+mean = np.mean(X_train_raw, axis=0)
+std = np.std(X_train_raw, axis=0)
+std[std == 0] = 1
+
+X_train = (X_train_raw - mean) / std
+X_test = (X_test_raw - mean) / std
 
 
 # -------------------------------------------------------------------
-# 2) THE MODEL CLASS (BASELINE + EXTENSION)
+# 2) BASELINE AND EXTENDED MODEL
 # -------------------------------------------------------------------
 
 class LogisticRegression:
-    def __init__(self, lr=0.01, lmbda=0.1, epochs=1500):
-        """
-        lr: Learning Rate (size of the step we take during training)
-        lmbda: Regularization strength (how much we punish large weights)
-        epochs: How many times we look at the whole dataset
-        """
+    """
+    From-scratch logistic regression using NumPy.
+
+    Baseline: penalty="L2"
+    Extension: penalty="L1"
+    """
+
+    # lr is how big of a step the model takes when updating weights
+    # lmbda is how much regularization changes weights
+    # epochs is the number of training rounds
+    def __init__(self, lr=0.1, lmbda=0.001, epochs=3000):
         self.lr = lr
         self.lmbda = lmbda
         self.epochs = epochs
@@ -62,125 +76,130 @@ class LogisticRegression:
         self.b = 0.0
 
     def sigmoid(self, z):
-        """Standard math function to squash any number into a range between 0 and 1."""
-        # np.clip prevents math errors if z is a giant number
+        #Convert a linear score into a probability between 0 and 1.
         z = np.clip(z, -500, 500)
         return 1 / (1 + np.exp(-z))
-    
-    def fit(self, X, y, penalty='L2'):
-        """
-        This is the training loop.
-        penalty='L2' is our BASELINE (Ridge).
-        penalty='L1' is our EXTENSION (Lasso).
-        """
+
+    def fit(self, X, y, penalty="L2"):
+        # Train logistic regression with either L2 or L1 regularization.
+        penalty = penalty.upper()
         n_samples, n_features = X.shape
-        # We start with all weights at zero
+
         self.w = np.zeros(n_features)
         self.b = 0.0
 
         for _ in range(self.epochs):
-            # STEP 1: Linear Math (z = X*w + b)
-            # np.dot handles all features/columns at once
+            # Forward pass: compute probabilities.
             z = np.dot(X, self.w) + self.b
-
-            # STEP 2: Turn the math into a probability (0 to 1)
             y_pred = self.sigmoid(z)
 
-            # STEP 3: Calculate the error (Difference between guess and truth)
+            # Logistic regression gradient.
             error = y_pred - y
-
-            # STEP 4: Calculate Gradient (Direction to move weights to fix the error)
-            # Standard gradient for logistic regression
             dw = (1 / n_samples) * np.dot(X.T, error)
+            db = (1 / n_samples) * np.sum(error)
 
-            # APPLY REGULARIZATION (The core of our project)
-            if penalty == 'L2':
-                # BASELINE: Gradient of squared weights is just the weight itself
-                dw += (self.lmbda * self.w)
-            elif penalty == 'L1':
-                # EXTENSION: Gradient of absolute weights is the 'sign' (1 or -1)
-                dw += (self.lmbda * np.sign(self.w))
-            
-            db = (1/n_samples) * np.sum(error)
+            if penalty == "L2":
+                # Baseline: L2 regularization penalizes large weights.
+                dw += (self.lmbda / n_samples) * self.w
+                self.w -= self.lr * dw
 
-            # STEP 5: Update parameters (Gradient Descent)
-            self.w -= self.lr * dw
+            elif penalty == "L1":
+                # Extension: L1 regularization encourages small weights to become zero.
+                self.w -= self.lr * dw
+                self.w = np.sign(self.w) * np.maximum(
+                    0,
+                    np.abs(self.w) - self.lr * self.lmbda
+                )
+
             self.b -= self.lr * db
 
-    def predict(self, X_test):
-        """Uses the learned weights to predict 0 or 1 for new data."""
-        z = np.dot(X_test, self.w) + self.b
-        probabilies = self.sigmoid(z)
-        # If probability is 0.5 or higher, we predict class 1
-        return (probabilies >= 0.3).astype(int)
-    
+    def predict(self, X):
+        # Predict class labels using a 0.5 probability threshold.
+        # e.g >=0.5 = 1
+        z = np.dot(X, self.w) + self.b
+        probabilities = self.sigmoid(z)
+        return (probabilities >= 0.5).astype(int)
+
+
 # -------------------------------------------------------------------
-# 3) EXECUTION AND EVALUATION
+# 3) TRAINING AND EVALUATION
 # -------------------------------------------------------------------
 
+def accuracy_score(y_true, y_pred):
+    # comupte accuracy from scratch
+    return np.mean(y_true == y_pred)
+
+
 def f1_score(y_true, y_pred):
+    # compute F1 from scratch
     tp = np.sum((y_true == 1) & (y_pred == 1))
     fp = np.sum((y_true == 0) & (y_pred == 1))
     fn = np.sum((y_true == 1) & (y_pred == 0))
-    
-    precision = tp / (tp + fp + 1e-8)
+
+    precision = tp / (tp + fp + 1e-8) # no divide by zero error
     recall = tp / (tp + fn + 1e-8)
-    
-    return 2 * (precision * recall) / (precision + recall + 1e-8)
+    return 2 * precision * recall / (precision + recall + 1e-8)
 
-# initialize one model instance for each regularization type
-model = LogisticRegression(lr=0.1, lmbda=0.2)
 
-# train the baseline (L2)
-model.fit(X_train, y_train, penalty='L2')
-base_preds = model.predict(X_test)
-base_accuracy = np.mean(base_preds == y_test)
-base_f1 = f1_score(y_test, base_preds)
-weights_baseline = model.w.copy() # save weights for the graph
+# Train baseline model with L2 regularization.
+l2_model = LogisticRegression(lr=0.1, lmbda=0.001, epochs=3000)
+l2_model.fit(X_train, y_train, penalty="L2")
+l2_preds = l2_model.predict(X_test)
+l2_accuracy = accuracy_score(y_test, l2_preds)
+l2_f1 = f1_score(y_test, l2_preds)
 
-# train the extension (L1)
-model = LogisticRegression(lr=0.1, lmbda=0.5)
-model.fit(X_train, y_train, penalty='L1')
-ext_preds = model.predict(X_test)
-ext_accuracy = np.mean(ext_preds == y_test)
-ext_f1 = f1_score(y_test, ext_preds)
-weights_extension = model.w.copy() # save weights for the graph
+# Train extended model with L1 regularization.
+l1_model = LogisticRegression(lr=0.1, lmbda=0.001, epochs=3000) # note passing same lr, lmbda, and epochs for fair training
+l1_model.fit(X_train, y_train, penalty="L1")
+l1_preds = l1_model.predict(X_test)
+l1_accuracy = accuracy_score(y_test, l1_preds)
+l1_f1 = f1_score(y_test, l1_preds)
 
-print(f'L2 Accuracy: {base_accuracy:.2%}, F1: {base_f1:.4f}')
-print(f'L1 Accuracy: {ext_accuracy:.2%}, F1: {ext_f1:.4f}')
+print("L2 Baseline")
+print(f"Accuracy: {l2_accuracy:.2%}")
+print(f"F1 Score: {l2_f1:.4f}")
 
-print("Predicted positives (L2):", np.sum(base_preds))
-print("Predicted positives (L1):", np.sum(ext_preds))
-print("Actual positives:", np.sum(y_test))
+print("\nL1 Extension")
+print(f"Accuracy: {l1_accuracy:.2%}")
+print(f"F1 Score: {l1_f1:.4f}")
 
-print("L2 near-zero weights:", np.sum(np.abs(weights_baseline) < 1e-3))
-print("L1 near-zero weights:", np.sum(np.abs(weights_extension) < 1e-3))
 
 # -------------------------------------------------------------------
-# 4) PLOTS
+# 4) VISUALIZATIONS
 # -------------------------------------------------------------------
 
-fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(14, 5))
+# compare baseline and extension performance.
+model_names = ["L2 Baseline", "L1 Extension"]
+accuracy_values = [l2_accuracy, l1_accuracy]
+f1_values = [l2_f1, l1_f1]
 
-# PLOT 1: Performance Bar Chart
-# Shows which model actually predicted better
-ax1.bar(['L2 (Baseline)', 'L1 (Extension)'], [base_accuracy, ext_accuracy], color=['skyblue', 'salmon'])
-ax1.set_title('Accuracy Comparison')
-ax1.set_ylabel('Accuracy %')
-ax1.set_ylim(min(base_accuracy, ext_accuracy) - 0.02,
-             max(base_accuracy, ext_accuracy) + 0.02)
-ax1.set_yticks(np.linspace(ax1.get_ylim()[0], ax1.get_ylim()[1], 5))
-ax1.set_yticklabels([f"{y:.2%}" for y in ax1.get_yticks()])
+x = np.arange(len(model_names))
+width = 0.35
 
-# PLOT 2: Weight Sparsity Chart
-# This proves the L1 extension worked! L1 pushes unimportant weights to 0.
-ax2.plot(weights_baseline, 'o-', label='Baseline (L2) Weights', alpha=0.7)
-ax2.plot(weights_extension, 'x--', label='Extension (L1) Weights', alpha=0.9)
-ax2.axhline(0, color='black', linewidth=0.8)
-ax2.set_title('Impact on Feature Weights')
-ax2.set_xlabel('Feature Index')
-ax2.set_ylabel('Weight Value')
-ax2.legend()
-
+plt.figure(figsize=(8, 5))
+plt.bar(x - width / 2, accuracy_values, width, label="Accuracy")
+plt.bar(x + width / 2, f1_values, width, label="F1 Score")
+plt.title("Baseline vs. Extended Model Performance")
+plt.ylabel("Score")
+plt.xticks(x, model_names)
+plt.ylim(0, 1)
+plt.legend()
 plt.tight_layout()
+plt.savefig("model_performance.png", dpi=300, bbox_inches="tight")
+plt.show()
+
+# compare learned feature weights.
+feature_index = np.arange(len(feature_names))
+
+plt.figure(figsize=(10, 5))
+plt.plot(feature_index, l2_model.w, "o-", label="L2 Baseline")
+plt.plot(feature_index, l1_model.w, "x--", label="L1 Extension")
+plt.axhline(0, linewidth=0.8)
+plt.title("Learned Feature Weights")
+plt.xlabel("Feature")
+plt.ylabel("Weight Value")
+plt.xticks(feature_index, feature_names, rotation=45, ha="right")
+plt.legend()
+plt.tight_layout()
+plt.savefig("feature_weights.png", dpi=300, bbox_inches="tight")
 plt.show()
