@@ -32,7 +32,6 @@ X_df = pd.get_dummies(
     drop_first=True,
     dtype=int
 )
-
 feature_names = X_df.columns.to_numpy()
 X_raw = X_df.values.astype(float)
 
@@ -167,16 +166,13 @@ print("\nL1 Extension")
 print(f"Accuracy: {l1_accuracy:.2%}")
 print(f"F1 Score: {l1_f1:.4f}")
 
-# Sklearn uses C = 1/lambda. 
-# We'll use the 'liblinear' solver as it supports both L1 and L2.
-c_val = 1 / (l2_model.lmbda if l2_model.lmbda > 0 else 1e-4)
 
-# Sklearn L2 (as before)
+# Sklearn L2
+c_val = 1 / (l2_model.lmbda if l2_model.lmbda > 0 else 1e-4)
 sk_l2 = SklearnLogReg(penalty='l2', C=c_val, solver='liblinear', max_iter=3000)
 sk_l2.fit(X_train, y_train)
 
-# Sklearn L1 (The new addition)
-# 'liblinear' is great for small/medium datasets with L1
+# Sklearn L1
 sk_l1 = SklearnLogReg(penalty='l1', C=c_val, solver='liblinear', max_iter=3000)
 sk_l1.fit(X_train, y_train)
 
@@ -206,6 +202,7 @@ f1_values = [l2_f1, l1_f1]
 x = np.arange(len(model_names))
 width = 0.35
 
+# plot beautification
 plt.figure(figsize=(8, 5))
 plt.bar(x - width / 2, accuracy_values, width, label="Accuracy")
 plt.bar(x + width / 2, f1_values, width, label="F1 Score")
@@ -221,6 +218,7 @@ plt.show()
 # compare learned feature weights.
 feature_index = np.arange(len(feature_names))
 
+# plot beautification 2
 plt.figure(figsize=(10, 5))
 plt.plot(feature_index, l2_model.w, "o-", label="L2 Baseline")
 plt.plot(feature_index, l1_model.w, "x--", label="L1 Extension")
