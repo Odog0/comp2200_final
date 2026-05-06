@@ -2,6 +2,10 @@ import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 
+from sklearn.linear_model import LogisticRegression as SklearnLogReg
+from sklearn.metrics import accuracy_score as sk_accuracy, f1_score as sk_f1
+
+
 # -------------------------------------------------------------------
 # 1) DATA LOADING AND PREPROCESSING
 # -------------------------------------------------------------------
@@ -162,6 +166,32 @@ print(f"F1 Score: {l2_f1:.4f}")
 print("\nL1 Extension")
 print(f"Accuracy: {l1_accuracy:.2%}")
 print(f"F1 Score: {l1_f1:.4f}")
+
+# Sklearn uses C = 1/lambda. 
+# We'll use the 'liblinear' solver as it supports both L1 and L2.
+c_val = 1 / (l2_model.lmbda if l2_model.lmbda > 0 else 1e-4)
+
+# Sklearn L2 (as before)
+sk_l2 = SklearnLogReg(penalty='l2', C=c_val, solver='liblinear', max_iter=3000)
+sk_l2.fit(X_train, y_train)
+
+# Sklearn L1 (The new addition)
+# 'liblinear' is great for small/medium datasets with L1
+sk_l1 = SklearnLogReg(penalty='l1', C=c_val, solver='liblinear', max_iter=3000)
+sk_l1.fit(X_train, y_train)
+
+# Metrics
+sk_l1_preds = sk_l1.predict(X_test)
+sk_l1_acc = sk_accuracy(y_test, sk_l1_preds)
+sk_l1_f1 = sk_f1(y_test, sk_l1_preds)
+
+sk_l2_preds = sk_l1.predict(X_test)
+sk_l2_acc = sk_accuracy(y_test, sk_l2_preds)
+sk_l2_f1 = sk_f1(y_test, sk_l2_preds)
+
+print("\n--- Final Model Comparison ---")
+print(f"Manual L1 Accuracy:  {l1_accuracy:.2%}  | Manual L2 Accuracy:  {l2_accuracy:.2%}")
+print(f"Sklearn L1 Accuracy: {sk_l1_acc:.2%}  | Sklearn L2 Accuracy: {sk_l2_acc:.2%}")
 
 
 # -------------------------------------------------------------------
